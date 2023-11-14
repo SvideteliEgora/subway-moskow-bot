@@ -29,5 +29,5 @@ def json_converter(data: list) -> list[dict]:
 def next_step(step=0) -> int:
     return step + 1
 
-# def check_media(data, key):
-#     if not
+
+

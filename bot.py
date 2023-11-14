@@ -6,7 +6,7 @@ from aiogram.types import FSInputFile
 from murkups import ikb_next_step, ikb_answer_options
 import config
 import json
-from functions import next_step
+from functions import next_step, dispatch_photo
 
 
 DATA = None
@@ -26,66 +26,66 @@ dp = Dispatcher(skip_updates=True)
 async def cmd_start(message: types.Message) -> None:
     next_step_output = next_step()
     text = DATA[0].get("Текст")
-    img = DATA[0].get("Картинка")
+    img_name = DATA[0].get("Картинка")
     next_step_method = DATA[0].get("Способ перехода к следующему шагу")
-
+    file_path = f"media\\{img_name}"
     await message.answer(f'Привет,{message.from_user.full_name}')
     await message.answer(text)
 
-    if MEDIA.get(img):
-        photo = MEDIA.get(img)
-        await bot.send_photo(chat_id=message.chat.id, photo=photo)
+    if MEDIA.get(img_name):
+        photo = MEDIA.get(img_name)
+        await message.answer_photo(photo)
     else:
-        photo = FSInputFile(f"media\\{img}")
+        photo = FSInputFile(file_path)
         result = await message.answer_photo(photo)
         photo_id = result.photo[-1].file_id
-        MEDIA[img] = photo_id
+        MEDIA[img_name] = photo_id
 
     await message.answer(next_step_method, reply_markup=ikb_next_step(next_step_output))
 
 
 @dp.callback_query(F.data.startswith("step_"))
 async def cb_step(callback_query: types.CallbackQuery) -> None:
-    if
     step = int(callback_query.data.replace("step_", ""))
-    text = DATA[step].get("Текст")
-    img = DATA[step].get("Картинка")
-    link_on_video = DATA[step].get("Видео / ссылка")
-    audio = DATA[step].get("Аудио")
-    answer_options = DATA[step].get("Варианты ответов")
-    next_step_method = DATA[step].get("Способ перехода к следующему шагу")
+    if step <= len(DATA) - 1:
+        text = DATA[step].get("Текст")
+        img = DATA[step].get("Картинка")
+        link_on_video = DATA[step].get("Видео / ссылка")
+        audio = DATA[step].get("Аудио")
+        answer_options = DATA[step].get("Варианты ответов")
+        next_step_method = DATA[step].get("Способ перехода к следующему шагу")
 
-    if answer_options:
-        await callback_query.message.answer(text, reply_markup=ikb_answer_options(answer_options, step))
-    else:
-        await callback_query.message.answer(text)
-        if img:
-            if MEDIA.get(img):
-                photo = MEDIA.get(img)
-                await callback_query.message.answer_photo(photo)
-            else:
-                photo = FSInputFile(f"media\\{img}")
-                sent_photo = await callback_query.message.answer_photo(photo)
-                photo_id = sent_photo.photo[-1].file_id
-                MEDIA[img] = photo_id
+        if answer_options:
+            await callback_query.message.answer(text, reply_markup=ikb_answer_options(answer_options, step))
+        else:
+            await callback_query.message.answer(text)
+            if img:
+                if MEDIA.get(img):
+                    photo = MEDIA.get(img)
+                    await callback_query.message.answer_photo(photo)
+                else:
+                    photo = FSInputFile(f"media\\{img}")
+                    sent_photo = await callback_query.message.answer_photo(photo)
+                    photo_id = sent_photo.photo[-1].file_id
+                    MEDIA[img] = photo_id
 
-        if link_on_video:
-            await callback_query.message.answer(link_on_video)
+            if link_on_video:
+                await callback_query.message.answer(link_on_video)
 
-        if audio:
-            if MEDIA.get(audio):
-                sound = MEDIA.get(img)
-                await callback_query.message.answer_photo(sound)
-            else:
-                sound = FSInputFile(f"media\\{audio}")
-                sent_audio = await callback_query.message.answer_audio(sound)
-                audio_id = sent_audio.audio.file_id
-                MEDIA[img] = audio_id
+            if audio:
+                if MEDIA.get(audio):
+                    sound = MEDIA.get(img)
+                    await callback_query.message.answer_photo(sound)
+                else:
+                    sound = FSInputFile(f"media\\{audio}")
+                    sent_audio = await callback_query.message.answer_audio(sound)
+                    audio_id = sent_audio.audio.file_id
+                    MEDIA[img] = audio_id
 
-        ikb = ikb_next_step(next_step(step))
-        if next_step_method == "Конец":
-            ikb = None
-        await callback_query.message.answer(next_step_method, reply_markup=ikb)
+            ikb = ikb_next_step(next_step(step))
+            if next_step_method == "Конец":
+                ikb = None
+            await callback_query.message.answer(next_step_method, reply_markup=ikb)
 
 
 @dp.callback_query(F.data.startswith("answer_"))
