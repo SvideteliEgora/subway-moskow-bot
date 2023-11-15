@@ -2,90 +2,64 @@ import logging
 import asyncio
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters.command import Command
-from aiogram.types import FSInputFile
-from murkups import ikb_next_step, ikb_answer_options
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import config
-import json
-from functions import next_step, dispatch_photo
+import gspread
+from functions import data_converter, send_message
 
+# get data from google sheets
+gc = gspread.service_account(filename="venv/calm-vine-332204-924334d7332a.json")
+sh_connection = gc.open_by_url('https://docs.google.com/spreadsheets/d/1fUu3aU7DhJoZl6X_KAX0GQVGvhqCW9f5iI0GbPPI5OA/edit')
+worksheet1 = sh_connection.sheet1
+list_of_lists = worksheet1.get_all_values()
 
-DATA = None
-MEDIA = {}
-json_file_path = "data.json"
-if not DATA:
-    with open(json_file_path, "r", encoding="UTF-8") as file:
-        DATA = json.load(file)
-
+data_gs = data_converter(list_of_lists)
+media_dict = {}
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=config.TOKEN)
 dp = Dispatcher(skip_updates=True)
 
 
+# murkups
+def ikb_next_step(next_step: int) -> InlineKeyboardMarkup:
+    ikb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="*", callback_data=f"step_{next_step}")]
+    ])
+
+    return ikb
+
+
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message) -> None:
-    next_step_output = next_step()
-    text = DATA[0].get("Текст")
-    img_name = DATA[0].get("Картинка")
-    next_step_method = DATA[0].get("Способ перехода к следующему шагу")
-    file_path = f"media\\{img_name}"
+    step = 0
+    text = data_gs[step].get("Текст")
+    next_step_method = data_gs[step].get("Способ перехода к следующему шагу")
     await message.answer(f'Привет,{message.from_user.full_name}')
     await message.answer(text)
-
-    if MEDIA.get(img_name):
-        photo = MEDIA.get(img_name)
-        await message.answer_photo(photo)
-    else:
-        photo = FSInputFile(file_path)
-        result = await message.answer_photo(photo)
-        photo_id = result.photo[-1].file_id
-        MEDIA[img_name] = photo_id
-
-    await message.answer(next_step_method, reply_markup=ikb_next_step(next_step_output))
+    await send_message(message, data_gs, media_dict, step)
+    await message.answer(next_step_method, reply_markup=ikb_next_step(step + 1))
 
 
 @dp.callback_query(F.data.startswith("step_"))
 async def cb_step(callback_query: types.CallbackQuery) -> None:
     step = int(callback_query.data.replace("step_", ""))
-    if step <= len(DATA) - 1:
-        text = DATA[step].get("Текст")
-        img = DATA[step].get("Картинка")
-        link_on_video = DATA[step].get("Видео / ссылка")
-        audio = DATA[step].get("Аудио")
-        answer_options = DATA[step].get("Варианты ответов")
-        next_step_method = DATA[step].get("Способ перехода к следующему шагу")
-
-        if answer_options:
-            await callback_query.message.answer(text, reply_markup=ikb_answer_options(answer_options, step))
-        else:
-            await callback_query.message.answer(text)
-            if img:
-                if MEDIA.get(img):
-                    photo = MEDIA.get(img)
-                    await callback_query.message.answer_photo(photo)
-                else:
-                    photo = FSInputFile(f"media\\{img}")
-                    sent_photo = await callback_query.message.answer_photo(photo)
-                    photo_id = sent_photo.photo[-1].file_id
-                    MEDIA[img] = photo_id
-
-            if link_on_video:
-                await callback_query.message.answer(link_on_video)
-
-            if audio:
-                if MEDIA.get(audio):
-                    sound = MEDIA.get(img)
-                    await callback_query.message.answer_photo(sound)
-                else:
-                    sound = FSInputFile(f"media\\{audio}")
-                    sent_audio = await callback_query.message.answer_audio(sound)
-                    audio_id = sent_audio.audio.file_id
-                    MEDIA[img] = audio_id
-
-            ikb = ikb_next_step(next_step(step))
-            if next_step_method == "Конец":
-                ikb = None
-            await callback_query.message.answer(next_step_method, reply_markup=ikb)
+    text = data_gs[step].get("Текст")
+    answer_options = data_gs[step].get("Варианты ответов")
+    next_step_method = data_gs[step].get("Способ перехода к следующему шагу")
+    if answer_options:
+        buttons = []
+        for answer in answer_options.split(","):
+            buttons.append([InlineKeyboardButton(text=answer, callback_data=f"answer_{answer}_{step}")])
+        ikb = InlineKeyboardMarkup(inline_keyboard=buttons)
+        await callback_query.message.answer(text, reply_markup=ikb)
+        return
+    await callback_query.message.answer(text)
+    await send_message(callback_query.message, data_gs, media_dict, step)
+    ikb = ikb_next_step(step + 1)
+    if next_step_method == "Конец":
+        ikb = None
+    await callback_query.message.answer(next_step_method, reply_markup=ikb)
 
 
 @dp.callback_query(F.data.startswith("answer_"))
@@ -93,18 +67,15 @@ async def cb_answer(callback_query: types.CallbackQuery) -> None:
     cb_data = callback_query.data.split("_")
     answer = cb_data[1]
     step = int(cb_data[2])
-    correct_answer = DATA[step].get("Правильный ответ")
-    correct_answer_reaction = DATA[step].get("Реакция на правильный ответ")
-    incorrect_answer_reaction = DATA[step].get("Реакция на неправильный ответ")
-    next_step_method = DATA[step].get("Способ перехода к следующему шагу")
+    correct_answer = data_gs[step].get("Правильный ответ")
+    correct_answer_reaction = data_gs[step].get("Реакция на правильный ответ")
+    incorrect_answer_reaction = data_gs[step].get("Реакция на неправильный ответ")
+    next_step_method = data_gs[step].get("Способ перехода к следующему шагу")
 
-    if answer == correct_answer:
-        text = correct_answer_reaction
-    else:
-        text = incorrect_answer_reaction
+    text = correct_answer_reaction if answer == correct_answer else incorrect_answer_reaction
 
     await callback_query.message.answer(text)
-    await callback_query.message.answer(next_step_method, reply_markup=ikb_next_step(next_step(step)))
+    await callback_query.message.answer(next_step_method, reply_markup=ikb_next_step(step + 1))
 
 
 async def main():
