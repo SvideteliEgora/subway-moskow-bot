@@ -5,7 +5,7 @@ from aiogram.filters.command import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import config
 import gspread
-from functions import data_converter, send_message
+from functions import data_converter, send_media
 
 # get data from google sheets
 gc = gspread.service_account(filename="venv/calm-vine-332204-924334d7332a.json")
@@ -37,7 +37,7 @@ async def cmd_start(message: types.Message) -> None:
     next_step_method = data_gs[step].get("Способ перехода к следующему шагу")
     await message.answer(f'Привет,{message.from_user.full_name}')
     await message.answer(text)
-    await send_message(message, data_gs, media_dict, step)
+    await send_media(message, data_gs, media_dict, step)
     await message.answer(next_step_method, reply_markup=ikb_next_step(step + 1))
 
 
@@ -55,7 +55,7 @@ async def cb_step(callback_query: types.CallbackQuery) -> None:
         await callback_query.message.answer(text, reply_markup=ikb)
         return
     await callback_query.message.answer(text)
-    await send_message(callback_query.message, data_gs, media_dict, step)
+    await send_media(callback_query.message, data_gs, media_dict, step)
     ikb = ikb_next_step(step + 1)
     if next_step_method == "Конец":
         ikb = None

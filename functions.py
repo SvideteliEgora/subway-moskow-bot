@@ -1,4 +1,5 @@
 from aiogram.types import FSInputFile
+from aiogram.utils.media_group import MediaGroupBuilder
 
 
 def data_converter(data: list) -> list[dict]:
@@ -29,19 +30,24 @@ def data_converter(data: list) -> list[dict]:
     return res
 
 
-async def send_message(message, data: list[dict], media: dict, step: int) -> None:
+async def send_media(message, data: list[dict], media: dict, step: int) -> None:
     img = data[step].get("Картинка")
     video_link = data[step].get("Видео / ссылка")
     audio = data[step].get("Аудио")
+
     if img:
         photo_id = media.get(img)
+        album_builder = MediaGroupBuilder()
         if photo_id:
-            await message.answer_photo(photo_id)
+            for i in photo_id:
+                album_builder.add_photo(media=i)
+            await message.answer_media_group(media=album_builder.build())
         else:
-            photo = FSInputFile(f"media\\{img}")
-            sent_photo = await message.answer_photo(photo)
-            photo_id = sent_photo.photo[-1].file_id
-            media[img] = photo_id
+            for i in img.split(";"):
+                photo = FSInputFile(f"media\\{i}")
+                album_builder.add_photo(media=photo)
+            sent_photos = await message.answer_media_group(media=album_builder.build())
+            media[img] = [i.photo[-1].file_id for i in sent_photos]
 
     if video_link:
         await message.answer(video_link)
